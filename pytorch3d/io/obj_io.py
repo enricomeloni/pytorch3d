@@ -523,6 +523,8 @@ def _load_obj(
         material_names, mtl_path, data_dir, load_textures=load_textures, device=device
     )
 
+
+
     if create_texture_atlas:
         # Using the images and properties from the
         # material file make a per face texture map.
@@ -533,10 +535,13 @@ def _load_obj(
         face_material_names = np.array(material_names)[idx]  # (F,)
         face_material_names[idx == -1] = ""
 
+        texture_atlases_dict = {}
+
+        albedo_textures = {mat_name: tex_dict['Kd'] for mat_name, tex_dict in texture_images.items()}
         # Construct the atlas.
         texture_atlas = make_mesh_texture_atlas(
             material_colors,
-            texture_images,
+            albedo_textures,
             face_material_names,
             faces_textures_idx,
             verts_uvs,

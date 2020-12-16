@@ -101,7 +101,7 @@ def make_mesh_texture_atlas(
     # Iterate through the materials used in this mesh. Update the
     # texture atlas for the faces which use this material.
     # Faces without texture are white.
-    for material_name, image in texture_images.items():
+    for material_name, image in list(texture_images.items()):
         # Only use the RGB colors
         if image.shape[2] == 4:
             image = image[:, :, :3]

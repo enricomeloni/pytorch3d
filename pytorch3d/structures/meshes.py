@@ -207,7 +207,7 @@ class Meshes(object):
         "equisized",
     ]
 
-    def __init__(self, verts=None, faces=None, textures=None):
+    def __init__(self, verts=None, faces=None, textures=None, aux=None):
         """
         Args:
             verts:
@@ -237,6 +237,7 @@ class Meshes(object):
             msg = "Expected textures to be an instance of type TexturesBase; got %r"
             raise ValueError(msg % type(textures))
         self.textures = textures
+        self.aux = aux
 
         # Indicates whether the meshes in the list/batch have the same number
         # of faces and vertices.

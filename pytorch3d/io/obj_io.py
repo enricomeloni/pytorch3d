@@ -266,7 +266,10 @@ def load_objs_as_meshes(
                 )
 
         mesh = Meshes(
-            verts=[verts.to(device)], faces=[faces.verts_idx.to(device)], textures=tex
+            verts=[verts.to(device)],
+            faces=[faces.verts_idx.to(device)],
+            textures=tex,
+            aux=aux
         )
         mesh_list.append(mesh)
     if len(mesh_list) == 1:

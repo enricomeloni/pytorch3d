@@ -387,8 +387,8 @@ def _bilinear_interpolation_grid_sample(
 
 
 MaterialProperties = Dict[str, Dict[str, torch.Tensor]]
-TextureFiles = Dict[str, Dict[str, str]]
-TextureImages = Dict[str, Dict[str, torch.Tensor]]
+TextureFiles = Dict[str, str]
+TextureImages = Dict[str, torch.Tensor]
 
 
 def _parse_mtl(f, device="cpu") -> Tuple[MaterialProperties, TextureFiles]:
@@ -404,13 +404,11 @@ def _parse_mtl(f, device="cpu") -> Tuple[MaterialProperties, TextureFiles]:
             if tokens[0] == "newmtl":
                 material_name = tokens[1]
                 material_properties[material_name] = {}
-                texture_files[material_name] = {}
-            elif "map_" in tokens[0]:
-                # This is a texture map
-                map_name = tokens[0].split("_")[1]
+            elif tokens[0] == "map_Kd":
+                # Diffuse texture map
                 # Account for the case where filenames might have spaces
-                filename = " ".join(tokens[1:])
-                texture_files[material_name][map_name] = filename
+                filename = line.strip()[7:]
+                texture_files[material_name] = filename
             elif tokens[0] == "Kd":
                 # RGB diffuse reflectivity
                 kd = np.array(tokens[1:4]).astype(np.float32)
@@ -447,17 +445,15 @@ def _load_texture_images(
     # Only keep the materials referenced in the obj.
     for material_name in material_names:
         if material_name in texture_files:
-            texture_images[material_name] = {}
-            for map_name in texture_files[material_name]:
-                # Load the texture image.
-                path = os.path.join(data_dir, texture_files[material_name][map_name])
-                if os.path.isfile(path):
-                    image = _read_image(path, format="RGB") / 255.0
-                    image = torch.from_numpy(image)
-                    texture_images[material_name][map_name] =  image
-                else:
-                    msg = f"Texture file does not exist: {path}"
-                    warnings.warn(msg)
+            # Load the texture image.
+            path = os.path.join(data_dir, texture_files[material_name])
+            if os.path.isfile(path):
+                image = _read_image(path, format="RGB") / 255.0
+                image = torch.from_numpy(image)
+                texture_images[material_name] = image
+            else:
+                msg = f"Texture file does not exist: {path}"
+                warnings.warn(msg)
 
         if material_name in material_properties:
             final_material_properties[material_name] = material_properties[

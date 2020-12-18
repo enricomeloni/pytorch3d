@@ -18,7 +18,16 @@ from pytorch3d.structures import Meshes, join_meshes_as_batch
 # Faces & Aux type returned from load_obj function.
 _Faces = namedtuple("Faces", "verts_idx normals_idx textures_idx materials_idx")
 _Aux = namedtuple(
-    "Properties", "normals verts_uvs material_colors texture_images texture_atlas"
+    "Properties",
+    "normals "
+    "verts_uvs "
+    "material_colors "
+    "texture_images "
+    "texture_atlas "
+    "texture_wrap "
+    "texture_atlas_size "
+    "face_material_names "
+    "faces_textures_idx"
 )
 
 
@@ -526,6 +535,7 @@ def _load_obj(
         material_names, mtl_path, data_dir, load_textures=load_textures, device=device
     )
 
+    face_material_names = None
     if create_texture_atlas:
         # Using the images and properties from the
         # material file make a per face texture map.
@@ -545,6 +555,7 @@ def _load_obj(
             verts_uvs,
             texture_atlas_size,
             texture_wrap,
+
         )
 
     faces = _Faces(
@@ -559,6 +570,10 @@ def _load_obj(
         material_colors=material_colors,
         texture_images=texture_images,
         texture_atlas=texture_atlas,
+        texture_wrap=texture_wrap,
+        texture_atlas_size=texture_atlas_size,
+        face_material_names=face_material_names,
+        faces_textures_idx=faces_textures_idx
     )
     return verts, faces, aux
 

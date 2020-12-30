@@ -719,10 +719,10 @@ class TexturesUV(TexturesBase):
         if borders is None:
             # we assume that _maps_padded is a single texture, therefore
             # the box starts at 0,0 and ends at H,W (shape[1:3])
-            self.borders = torch.tensor(
+            self.borders = torch.tensor([
                 [
-                    [0,0] + list(map.shape[1:3]) for map in self._maps_padded
-                ],
+                    [0,0] + list(map.shape[0:2]) for map in self._maps_padded
+                ]],
                 device=self.device
             )
         else:

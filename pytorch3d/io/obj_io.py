@@ -266,13 +266,34 @@ def load_objs_as_meshes(
         else:
             # TexturesUV type
             tex_maps = aux.texture_images
+            textures = []
             if tex_maps is not None and len(tex_maps) > 0:
                 verts_uvs = aux.verts_uvs.to(device)  # (V, 2)
                 faces_uvs = faces.textures_idx.to(device)  # (F, 3)
-                image = list(tex_maps.values())[0].to(device)[None]
-                tex = TexturesUV(
-                    verts_uvs=[verts_uvs], faces_uvs=[faces_uvs], maps=image
-                )
+                face_to_mat = faces.materials_idx
+
+                # code for checking
+
+                current_offset = 0
+                for mat_idx, (mat_name, tex_map) in enumerate(tex_maps.items()):
+                    image = tex_map.flip(0).unsqueeze(0).to(device)
+                    faces_mask = face_to_mat == mat_idx
+
+                    faces_verts_uvs = faces_uvs[faces_mask].unique()
+                    tex_verts_uvs = verts_uvs[faces_verts_uvs]
+
+                    tex_faces_uvs = faces_uvs[faces_mask] - current_offset
+
+                    tex = TexturesUV(
+                        verts_uvs=[tex_verts_uvs], faces_uvs=[tex_faces_uvs], maps=image
+                    )
+                    textures.append(tex)
+
+                    current_offset += tex_verts_uvs.shape[0]
+
+                tex = textures[0]
+                if len(textures) > 1:
+                    tex = tex.join_batch(textures[1:]).join_scene()
 
         mesh = Meshes(
             verts=[verts.to(device)],
@@ -555,7 +576,6 @@ def _load_obj(
             verts_uvs,
             texture_atlas_size,
             texture_wrap,
-
         )
 
     faces = _Faces(

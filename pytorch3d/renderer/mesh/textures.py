@@ -932,7 +932,7 @@ class TexturesUV(TexturesBase):
 
         pixel_uvs = pixel_uvs * 2.0 - 1.0
 
-        texture_maps = torch.flip(texture_maps, [2])  # flip y axis of the texture map
+        # texture_maps = torch.flip(texture_maps, [2])  # flip y axis of the texture map
         if texture_maps.device != pixel_uvs.device:
             texture_maps = texture_maps.to(pixel_uvs.device)
         texels = F.grid_sample(

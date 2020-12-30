@@ -577,6 +577,7 @@ class TexturesUV(TexturesBase):
         verts_uvs: Union[torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor]],
         padding_mode: str = "border",
         align_corners: bool = True,
+        borders: Union[torch.Tensor, List[torch.Tensor]] = None
     ):
         """
         Textures are represented as a per mesh texture map and uv coordinates for each
@@ -713,7 +714,28 @@ class TexturesUV(TexturesBase):
         if self._maps_padded.device != self.device:
             raise ValueError("maps must be on the same device as verts/faces uvs.")
 
+        # we add the borders of the texture as 4 values per map
+        # topleft_x, topleft_y, bottomright_x, bottomright_y
+        if borders is None:
+            # we assume that _maps_padded is a single texture, therefore
+            # the box starts at 0,0 and ends at H,W (shape[1:3])
+            self.borders = torch.tensor(
+                [
+                    [0,0] + list(map.shape[1:3]) for map in self._maps_padded
+                ],
+                device=self.device
+            )
+        else:
+            # if borders are provided we check that it has 5 dims:
+            # 1 for _N and 1 for the number of subtextures and 1 for the box
+            if borders.ndim == 3:
+                self.borders = borders
+            else:
+                raise ValueError("Texture borders should have ndim == 3")
+
         self.valid = torch.ones((self._N,), dtype=torch.bool, device=self.device)
+
+
 
     def clone(self):
         tex = self.__class__(
@@ -1109,6 +1131,7 @@ class TexturesUV(TexturesBase):
         single_map = maps[0].new_zeros((*merging_plan.total_size, 3))
         verts_uvs = self.verts_uvs_list()
         verts_uvs_merged = []
+        borders = []
 
         for map_, loc, uvs in zip(maps, merging_plan.locations, verts_uvs):
             new_uvs = uvs.clone()
@@ -1125,6 +1148,13 @@ class TexturesUV(TexturesBase):
                 new_uvs = 1.0 - new_uvs[:, [1, 0]]
                 if TYPE_CHECKING:
                     new_uvs = torch.Tensor(new_uvs)
+
+            # calculate border box of texture
+            map_size = list(map_.shape[0:2])
+            top_left = list(loc[0:2])
+            bottom_right = [pos + size for pos, size in zip(top_left, map_size[::-1])]
+            map_border = top_left + bottom_right
+            borders.append(map_border)
 
             # If align_corners is True, then an index of x (where x is in
             # the range 0 .. map_.shape[]-1) in one of the input maps
@@ -1172,6 +1202,7 @@ class TexturesUV(TexturesBase):
             faces_uvs=[torch.cat(faces_uvs_merged)],
             align_corners=self.align_corners,
             padding_mode=self.padding_mode,
+            borders=torch.tensor([borders])
         )
 
     def centers_for_image(self, index):
@@ -1209,6 +1240,27 @@ class TexturesUV(TexturesBase):
             ).cpu()
             centers = centers[0, :, 0].T
         return centers
+
+    def get_textures(self) -> List[torch.Tensor]:
+        """
+
+        :return: List of N torch.Tensor(Hi,Wi,3) containing
+        all the textures that compose the TexturesUV
+        """
+
+        maps, borders_list = self._maps_padded, self.borders
+        textures = []
+        for map, borders in zip(maps, borders_list):
+            for border in borders:
+                textures.append(
+                    map[
+                    border[0]:border[2],
+                    border[1]:border[3]
+                    ]
+                )
+
+        return textures
+
 
 
 class TexturesVertex(TexturesBase):

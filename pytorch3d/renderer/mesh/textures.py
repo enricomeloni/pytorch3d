@@ -577,7 +577,8 @@ class TexturesUV(TexturesBase):
         verts_uvs: Union[torch.Tensor, List[torch.Tensor], Tuple[torch.Tensor]],
         padding_mode: str = "border",
         align_corners: bool = True,
-        borders: Union[torch.Tensor, List[torch.Tensor]] = None
+        borders: Union[torch.Tensor, List[torch.Tensor]] = None,
+        mat_names: Union[str, List[str]] = None
     ):
         """
         Textures are represented as a per mesh texture map and uv coordinates for each
@@ -726,12 +727,22 @@ class TexturesUV(TexturesBase):
                 device=self.device
             )
         else:
-            # if borders are provided we check that it has 5 dims:
+            # if borders are provided we check that it has 3 dims:
             # 1 for _N and 1 for the number of subtextures and 1 for the box
             if borders.ndim == 3:
                 self.borders = borders
             else:
                 raise ValueError("Texture borders should have ndim == 3")
+
+        # set name (or names) of textures
+        if mat_names is None:
+            self.mat_names = ["unnamed_texture"]
+        else:
+            if isinstance(mat_names, str):
+                self.mat_names = [mat_names]
+            else:
+                self.mat_names = mat_names
+
 
         self.valid = torch.ones((self._N,), dtype=torch.bool, device=self.device)
 
@@ -1066,16 +1077,19 @@ class TexturesUV(TexturesBase):
         verts_uvs_list = []
         faces_uvs_list = []
         maps_list = []
+        mat_names = []
         faces_uvs_list += self.faces_uvs_list()
         verts_uvs_list += self.verts_uvs_list()
         maps_list += list(self.maps_padded().unbind(0))
         num_faces_per_mesh = self._num_faces_per_mesh
+        mat_names += self.mat_names
         for tex in textures:
             verts_uvs_list += tex.verts_uvs_list()
             faces_uvs_list += tex.faces_uvs_list()
             num_faces_per_mesh += tex._num_faces_per_mesh
             tex_map_list = list(tex.maps_padded().unbind(0))
             maps_list += tex_map_list
+            mat_names += tex.mat_names
 
         new_tex = self.__class__(
             maps=maps_list,
@@ -1083,6 +1097,7 @@ class TexturesUV(TexturesBase):
             faces_uvs=faces_uvs_list,
             padding_mode=self.padding_mode,
             align_corners=self.align_corners,
+            mat_names=mat_names
         )
         new_tex._num_faces_per_mesh = num_faces_per_mesh
         return new_tex
@@ -1230,7 +1245,8 @@ class TexturesUV(TexturesBase):
             faces_uvs=[torch.cat(faces_uvs_merged)],
             align_corners=self.align_corners,
             padding_mode=self.padding_mode,
-            borders=torch.tensor([borders])
+            borders=torch.tensor([borders]),
+            mat_names=self.mat_names
         )
 
     def centers_for_image(self, index):
@@ -1276,16 +1292,16 @@ class TexturesUV(TexturesBase):
         all the textures that compose the TexturesUV
         """
 
-        maps, borders_list = self._maps_padded, self.borders
-        textures = []
+        maps, borders_list, names = self._maps_padded, self.borders, self.mat_names
+        textures = {}
+        name_offset = 0
         for map, borders in zip(maps, borders_list):
-            for border in borders:
-                textures.append(
-                    map[
+            map_names = names[name_offset:name_offset+len(borders)]
+            for border, name in zip(borders, map_names):
+                textures[name] = map[
                     border[0]:border[2],
                     border[1]:border[3]
-                    ]
-                )
+                ]
 
         return textures
 

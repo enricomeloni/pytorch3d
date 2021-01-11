@@ -285,7 +285,7 @@ def load_objs_as_meshes(
                     tex_faces_uvs = faces_uvs[faces_mask] - current_offset
 
                     tex = TexturesUV(
-                        verts_uvs=[tex_verts_uvs], faces_uvs=[tex_faces_uvs], maps=image
+                        verts_uvs=[tex_verts_uvs], faces_uvs=[tex_faces_uvs], maps=image, mat_names=[mat_name]
                     )
                     textures.append(tex)
 

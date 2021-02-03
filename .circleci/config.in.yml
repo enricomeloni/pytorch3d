@@ -75,6 +75,7 @@ jobs:
       # - run: conda install -c pytorch pytorch torchvision
 
       - run: pip3 install --progress-bar off 'git+https://github.com/facebookresearch/fvcore'
+      - run: pip3 install --progress-bar off 'git+https://github.com/facebookresearch/iopath'
       - run:
           name: get cub
           command: |
@@ -187,8 +188,7 @@ jobs:
 
           export DOCKER_IMAGE=pytorch/conda-cuda
           echo Pulling docker image $DOCKER_IMAGE
-          docker pull $DOCKER_IMAGE >/dev/null
-
+          docker pull $DOCKER_IMAGE
     - run:
         name: Build and run tests
         command: |

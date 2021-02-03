@@ -5,14 +5,18 @@
 import os
 import warnings
 from collections import namedtuple
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
+from iopath.common.file_io import PathManager
 from pytorch3d.io.mtl_io import load_mtl, make_mesh_texture_atlas
 from pytorch3d.io.utils import _check_faces_indices, _make_tensor, _open_file
 from pytorch3d.renderer import TexturesAtlas, TexturesUV
 from pytorch3d.structures import Meshes, join_meshes_as_batch
+
+from .pluggable_formats import MeshFormatInterpreter, endswith
 
 
 # Faces & Aux type returned from load_obj function.
@@ -77,6 +81,7 @@ def load_obj(
     texture_atlas_size: int = 4,
     texture_wrap: Optional[str] = "repeat",
     device="cpu",
+    path_manager: Optional[PathManager] = None,
 ):
     """
     Load a mesh from a .obj file and optionally textures from a .mtl file.
@@ -148,6 +153,7 @@ def load_obj(
             If `texture_mode="clamp"` the values are clamped to the range [0, 1].
             If None, then there is no transformation of the texture values.
         device: string or torch.device on which to return the new tensors.
+        path_manager: optionally a PathManager object to interpret paths.
 
     Returns:
         6-element tuple containing
@@ -210,18 +216,23 @@ def load_obj(
               None.
     """
     data_dir = "./"
+    # pyre-fixme[6]: Expected `Union[typing.Type[typing.Any],
+    #  typing.Tuple[typing.Type[typing.Any], ...]]` for 2nd param but got `Any`.
     if isinstance(f, (str, bytes, os.PathLike)):
         # pyre-fixme[6]: Expected `_PathLike[Variable[typing.AnyStr <: [str,
         #  bytes]]]` for 1st param but got `Union[_PathLike[typing.Any], bytes, str]`.
         data_dir = os.path.dirname(f)
-    with _open_file(f, "r") as f:
+    if path_manager is None:
+        path_manager = PathManager()
+    with _open_file(f, path_manager, "r") as f:
         return _load_obj(
             f,
-            data_dir,
+            data_dir=data_dir,
             load_textures=load_textures,
             create_texture_atlas=create_texture_atlas,
             texture_atlas_size=texture_atlas_size,
             texture_wrap=texture_wrap,
+            path_manager=path_manager,
             device=device,
         )
 
@@ -233,6 +244,7 @@ def load_objs_as_meshes(
     create_texture_atlas: bool = False,
     texture_atlas_size: int = 4,
     texture_wrap: Optional[str] = "repeat",
+    path_manager: Optional[PathManager] = None,
 ):
     """
     Load meshes from a list of .obj files using the load_obj function, and
@@ -241,11 +253,13 @@ def load_objs_as_meshes(
     details. material_colors and normals are not stored.
 
     Args:
-        f: A list of file-like objects (with methods read, readline, tell,
-        and seek), pathlib paths or strings containing file names.
+        files: A list of file-like objects (with methods read, readline, tell,
+            and seek), pathlib paths or strings containing file names.
         device: Desired device of returned Meshes. Default:
             uses the current device for the default tensor type.
         load_textures: Boolean indicating whether material files are loaded
+        create_texture_atlas, texture_atlas_size, texture_wrap: as for load_obj.
+        path_manager: optionally a PathManager object to interpret paths.
 
     Returns:
         New Meshes object.
@@ -258,6 +272,7 @@ def load_objs_as_meshes(
             create_texture_atlas=create_texture_atlas,
             texture_atlas_size=texture_atlas_size,
             texture_wrap=texture_wrap,
+            path_manager=path_manager,
         )
         tex = None
         if create_texture_atlas:
@@ -305,6 +320,58 @@ def load_objs_as_meshes(
     if len(mesh_list) == 1:
         return mesh_list[0]
     return join_meshes_as_batch(mesh_list)
+
+
+class MeshObjFormat(MeshFormatInterpreter):
+    def __init__(self):
+        self.known_suffixes = (".obj",)
+
+    def read(
+        self,
+        path: Union[str, Path],
+        include_textures: bool,
+        device,
+        path_manager: PathManager,
+        create_texture_atlas: bool = False,
+        texture_atlas_size: int = 4,
+        texture_wrap: Optional[str] = "repeat",
+        **kwargs,
+    ) -> Optional[Meshes]:
+        if not endswith(path, self.known_suffixes):
+            return None
+        mesh = load_objs_as_meshes(
+            files=[path],
+            device=device,
+            load_textures=include_textures,
+            create_texture_atlas=create_texture_atlas,
+            texture_atlas_size=texture_atlas_size,
+            texture_wrap=texture_wrap,
+            path_manager=path_manager,
+        )
+        return mesh
+
+    def save(
+        self,
+        data: Meshes,
+        path: Union[str, Path],
+        path_manager: PathManager,
+        binary: Optional[bool],
+        decimal_places: Optional[int] = None,
+        **kwargs,
+    ) -> bool:
+        if not endswith(path, self.known_suffixes):
+            return False
+
+        verts = data.verts_list()[0]
+        faces = data.faces_list()[0]
+        save_obj(
+            f=path,
+            verts=verts,
+            faces=faces,
+            decimal_places=decimal_places,
+            path_manager=path_manager,
+        )
+        return True
 
 
 def _parse_face(
@@ -462,7 +529,13 @@ def _parse_obj(f, data_dir: str):
 
 
 def _load_materials(
-    material_names: List[str], f, data_dir: str, *, load_textures: bool, device
+    material_names: List[str],
+    f,
+    *,
+    data_dir: str,
+    load_textures: bool,
+    device,
+    path_manager: PathManager,
 ):
     """
     Load materials and optionally textures from the specified path.
@@ -473,6 +546,7 @@ def _load_materials(
         data_dir: the directory where the material texture files are located.
         load_textures: whether textures should be loaded.
         device: string or torch.device on which to return the new tensors.
+        path_manager: PathManager object to interpret paths.
 
     Returns:
         material_colors: dict of properties for each material.
@@ -491,16 +565,24 @@ def _load_materials(
         return None, None
 
     # Texture mode uv wrap
-    return load_mtl(f, material_names, data_dir, device=device)
+    return load_mtl(
+        f,
+        material_names=material_names,
+        data_dir=data_dir,
+        path_manager=path_manager,
+        device=device,
+    )
 
 
 def _load_obj(
     f_obj,
+    *,
     data_dir,
     load_textures: bool = True,
     create_texture_atlas: bool = False,
     texture_atlas_size: int = 4,
     texture_wrap: Optional[str] = "repeat",
+    path_manager: PathManager,
     device="cpu",
 ):
     """
@@ -553,7 +635,12 @@ def _load_obj(
 
     texture_atlas = None
     material_colors, texture_images = _load_materials(
-        material_names, mtl_path, data_dir, load_textures=load_textures, device=device
+        material_names,
+        mtl_path,
+        data_dir=data_dir,
+        load_textures=load_textures,
+        path_manager=path_manager,
+        device=device,
     )
 
     face_material_names = None
@@ -598,7 +685,13 @@ def _load_obj(
     return verts, faces, aux
 
 
-def save_obj(f, verts, faces, decimal_places: Optional[int] = None):
+def save_obj(
+    f,
+    verts,
+    faces,
+    decimal_places: Optional[int] = None,
+    path_manager: Optional[PathManager] = None,
+):
     """
     Save a mesh to an .obj file.
 
@@ -607,6 +700,8 @@ def save_obj(f, verts, faces, decimal_places: Optional[int] = None):
         verts: FloatTensor of shape (V, 3) giving vertex coordinates.
         faces: LongTensor of shape (F, 3) giving faces.
         decimal_places: Number of decimal places for saving.
+        path_manager: Optional PathManager for interpreting f if
+            it is a str.
     """
     if len(verts) and not (verts.dim() == 2 and verts.size(1) == 3):
         message = "Argument 'verts' should either be empty or of shape (num_verts, 3)."
@@ -616,7 +711,10 @@ def save_obj(f, verts, faces, decimal_places: Optional[int] = None):
         message = "Argument 'faces' should either be empty or of shape (num_faces, 3)."
         raise ValueError(message)
 
-    with _open_file(f, "w") as f:
+    if path_manager is None:
+        path_manager = PathManager()
+
+    with _open_file(f, path_manager, "w") as f:
         return _save(f, verts, faces, decimal_places)
 
 

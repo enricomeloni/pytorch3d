@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -31,7 +31,7 @@ class RasterizationSettings:
 
     def __init__(
         self,
-        image_size: int = 256,
+        image_size: Union[int, Tuple[int, int]] = 256,
         blur_radius: float = 0.0,
         faces_per_pixel: int = 1,
         bin_size: Optional[int] = None,
@@ -79,6 +79,7 @@ class MeshRasterizer(nn.Module):
     def to(self, device):
         # Manually move to device cameras as it is not a subclass of nn.Module
         self.cameras = self.cameras.to(device)
+        return self
 
     def transform(self, meshes_world, **kwargs) -> torch.Tensor:
         """
@@ -109,11 +110,12 @@ class MeshRasterizer(nn.Module):
         # NOTE: Retaining view space z coordinate for now.
         # TODO: Revisit whether or not to transform z coordinate to [-1, 1] or
         # [0, 1] range.
+        eps = kwargs.get("eps", None)
         verts_view = cameras.get_world_to_view_transform(**kwargs).transform_points(
-            verts_world
+            verts_world, eps=eps
         )
         verts_screen = cameras.get_projection_transform(**kwargs).transform_points(
-            verts_view
+            verts_view, eps=eps
         )
         verts_screen[..., 2] = verts_view[..., 2]
         meshes_screen = meshes_world.update_padded(new_verts_padded=verts_screen)

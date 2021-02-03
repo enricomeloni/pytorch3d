@@ -3,6 +3,7 @@
 
 import torch
 import torch.nn as nn
+from pytorch3d.ops import interpolate_face_attributes
 
 
 # A renderer class should be initialized with a
@@ -55,6 +56,23 @@ class MeshRenderer(nn.Module):
         images = self.shader(fragments, meshes_world, **kwargs)
 
         return images
+
+    def get_view_to_texture_map(self, meshes_world, **kwargs):
+        fragments = self.rasterizer(meshes_world, **kwargs)
+        tex = meshes_world.textures
+        tex_map = tex.maps_padded()
+
+        packing_list = [
+            i[j] for i, j in zip(tex.verts_uvs_list(), tex.faces_uvs_list())
+        ]
+        faces_verts_uvs = torch.cat(packing_list)
+
+        pixel_uvs = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs
+        )
+
+        return pixel_uvs
+
 
 
 class MeshRendererWithFragments(nn.Module):
